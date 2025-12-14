@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Le Bocal de Noel Secret Santa</title>
+    <style>
+        body { 
+            font-family: 'Courier New', monospace; 
+            background-color: #0f4229;
+            color: #ffffff; 
+            padding: 20px; 
+            text-align: center;
+        }
+
+        h1 { 
+            color: #ffd700; 
+            text-shadow: 2px 2px #c0392b;
+            border-bottom: 2px dashed #ffffff;
+            padding-bottom: 10px;
+        }
+
+        #input-area {
+            background: #145c38;
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid #ffd700;
+            margin-bottom: 20px;
+            display: inline-block;
+        }
+
+        input[type="text"] {
+            padding: 10px;
+            border-radius: 5px;
+            border: none;
+            width: 300px;
+            font-family: inherit;
+        }
+
+        button {
+            padding: 10px 20px;
+            border-radius: 5px;
+            border: none;
+            background-color: #c0392b; 
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            font-family: inherit;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background-color: #e74c3c;
+        }
+
+        #log { 
+            margin-top: 20px; 
+            max-width: 600px; 
+            margin-left: auto; 
+            margin-right: auto; 
+        }
+
+        .whisper { 
+            padding: 15px; 
+            border: 2px solid #ffd700; 
+            border-radius: 8px;
+            margin-bottom: 15px; 
+            background-color: #b3000c; 
+            color: #fff;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            animation: snowFall 0.5s ease-out;
+            text-align: left;
+            font-size: 1.1em;
+        }
+
+        #picked-name {
+        background: #145c38;
+        border: 2px dashed #ffd700;
+        padding: 15px;
+        border-radius: 10px;
+        animation: snowFall 0.5s ease-out;
+        }
+
+
+        @keyframes snowFall { 
+            from { opacity: 0; transform: translateY(-20px) scale(0.9); } 
+            to { opacity: 1; transform: translateY(0) scale(1); } 
+        }
+
+        #status { font-size: 0.8em; margin-bottom: 10px; opacity: 0.8; }
+    </style>
+</head>
+<body>
+
+    <h1>Ma Wish-list collaborative</h1>
+    <div id="status">Connexion au serveur...</div>
+
+    <div id="input-area">
+        <input type="text" id="titleInput" placeholder="Titre du souhait" style="margin-bottom:8px;" onkeypress="handleEnter(event)"><br>
+        <input type="text" id="detailsInput" placeholder="Détails (optionnel)" style="margin-bottom:8px;"><br>
+        <input type="number" id="priorityInput" placeholder="Priorité (1)" style="width:100px;" min="1" max="5">
+        <button onclick="sendMessage()">Ajouter</button>
+    </div>
+
+    <div id="picker-area" style="margin-top:20px;">
+    <button onclick="pickName()">Tirer un prénom</button>
+    <div id="picked-name" style="margin-top:15px;font-size:1.5em;color:#ffd700;"></div>
+    </div>
+
+
+    <div id="log"></div>
+
+    <div id="crud-area" style="margin-top:30px; padding:15px; border:2px dashed #ffd700; border-radius:10px; background:#145c38; max-width:600px; margin-left:auto; margin-right:auto;">
+        <h2 style="color:#ffd700;">Test CRUD</h2>
+
+        <div style="margin-bottom:10px;">
+            <button onclick="getAll()">Lister tous</button>
+        </div>
+
+        <div style="margin-bottom:10px;">
+            <input type="number" id="readIndex" placeholder="Index à lire" style="width:100px;">
+            <button onclick="getOne()">Lire</button>
+        </div>
+
+        <div style="margin-bottom:10px;">
+            <input type="number" id="updateIndex" placeholder="Index à modifier" style="width:100px;">
+            <input type="text" id="updateContent" placeholder="Nouveau contenu" style="width:200px;">
+            <button onclick="updateOne()">Modifier</button>
+        </div>
+
+
+        <div style="margin-bottom:10px;">
+            <input type="number" id="deleteIndex" placeholder="Index à supprimer" style="width:100px;">
+            <button onclick="deleteOne()">Supprimer</button>
+        </div>
+
+        <div id="crud-log" style="margin-top:15px; color:#fff;"></div>
+    </div>
+
+    <script>
+        const logDiv = document.getElementById('log');
+        const statusDiv = document.getElementById('status');
+        const msgInput = document.getElementById('msgInput');
+        const socket = new WebSocket("ws://localhost:8080/stream");
+
+        
+        const names = [];
+        let remainingNames = [];
+
+        socket.onopen = () => {
+            statusDiv.innerText = "Connecté au serveur. Ajoute un souhait !";
+            statusDiv.style.color = "#ffd700";
+        };
+
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            const div = document.createElement('div');
+            div.className = 'whisper';
+            div.innerHTML = `<div><strong>${data.title}</strong> — ${data.details} <span style="float:right;color:#ffd700;">P:${data.priority}</span></div>`;
+            logDiv.prepend(div);
+        };
+
+
+
+        socket.onclose = () => {
+            statusDiv.innerText = "Déconnecté";
+            statusDiv.style.color = "#ff9999";
+        };
+
+        async function sendMessage() {
+            const title = document.getElementById('titleInput').value;
+            const details = document.getElementById('detailsInput').value;
+            const priority = parseInt(document.getElementById('priorityInput').value) || 1;
+            if (!title) return alert('Titre requis');
+
+            try {
+                await fetch("http://localhost:8080/wish", {
+                    method: "POST",
+                    body: JSON.stringify({ title: title, details: details, priority: priority }),
+                    headers: { "Content-Type": "application/json" }
+                });
+                document.getElementById('titleInput').value = "";
+                document.getElementById('detailsInput').value = "";
+                document.getElementById('priorityInput').value = "";
+            } catch (error) {
+                console.error("Erreur d'envoi:", error);
+                alert("Le serveur ne repond pas.");
+            }
+        }
+
+        function handleEnter(e) {
+            if (e.key === 'Enter') sendMessage();
+        }
+
+
+        
+
+        async function pickName() {
+            const pickedDiv = document.getElementById('picked-name');
+
+            try {
+                const res = await fetch("http://localhost:8080/random");
+
+                if (!res.ok) {
+                    pickedDiv.innerText = "Le bocal est vide";
+                    return;
+                }
+
+                const data = await res.json();
+
+                pickedDiv.innerText = `Wish choisi : ${data.title} — ${data.details}`;
+            } catch (err) {
+                console.error(err);
+                pickedDiv.innerText = "Impossible de tirer un nom";
+            }
+        }
+
+        const crudLog = document.getElementById('crud-log');
+
+        async function getAll() {
+            try {
+                const res = await fetch("http://localhost:8080/wishes");
+                const data = await res.json();
+                crudLog.innerText = JSON.stringify(data, null, 2);
+            } catch (err) {
+                crudLog.innerText = "Erreur: " + err;
+            }
+        }
+
+        async function getOne() {
+            const index = document.getElementById('readIndex').value;
+            if (index === "") return;
+            try {
+                const res = await fetch(`http://localhost:8080/wish/${index}`);
+                const data = await res.json();
+                crudLog.innerText = JSON.stringify(data, null, 2);
+            } catch (err) {
+                crudLog.innerText = "Erreur: " + err;
+            }
+        }
+
+        async function updateOne() {
+            const index = document.getElementById('updateIndex').value;
+            const content = document.getElementById('updateContent').value;
+            if (!index || !content) return alert("Index et contenu requis");
+
+            try {
+                await fetch(`http://localhost:8080/wish/${index}`, {
+                    method: "PUT",
+                    body: JSON.stringify({ content: content }),
+                    headers: { "Content-Type": "application/json" }
+                });
+                alert("Nom mis a jour");
+            } catch (err) {
+                console.error(err);
+                alert("Erreur lors de la mise à jour");
+            }
+        }
+
+
+        async function deleteOne() {
+            const index = document.getElementById('deleteIndex').value;
+            if (index === "") return;
+            try {
+                const res = await fetch(`http://localhost:8080/wish/${index}`, { method: "DELETE" });
+                crudLog.innerText = await res.text();
+            } catch (err) {
+                crudLog.innerText = "Erreur: " + err;
+            }
+        }
+
+    </script>
+</body>
+</html>
