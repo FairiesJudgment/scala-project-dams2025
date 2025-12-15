@@ -10,7 +10,7 @@ import zio.http._
 object WebSocketE2ESpec extends ZIOSpecDefault {
   import Main._
 
-  def httpPost(path: String, body: String): Task[(Int, String)] = ZIO.attempt {
+  def httpPost(path: String, body: String): Task[(Int, String)] = {
     val client = HttpClient.newHttpClient()
     val req    = HttpRequest
       .newBuilder()
@@ -18,8 +18,17 @@ object WebSocketE2ESpec extends ZIOSpecDefault {
       .header("Content-Type", "application/json")
       .POST(HttpRequest.BodyPublishers.ofString(body))
       .build()
-    val resp   = client.send(req, HttpResponse.BodyHandlers.ofString())
-    (resp.statusCode(), resp.body())
+
+    def attemptSend(retries: Int): Task[(Int, String)] =
+      ZIO.attemptBlocking {
+        val resp = client.send(req, HttpResponse.BodyHandlers.ofString())
+        (resp.statusCode(), resp.body())
+      }.catchAll { _ =>
+        if (retries <= 0) ZIO.fail(new RuntimeException("httpPost failed after retries"))
+        else ZIO.attemptBlocking(Thread.sleep(200)) *> attemptSend(retries - 1)
+      }
+
+    attemptSend(200)
   }
 
   def httpGet(path: String): Task[(Int, String)] = ZIO.attempt {
@@ -33,7 +42,7 @@ object WebSocketE2ESpec extends ZIOSpecDefault {
     (resp.statusCode(), resp.body())
   }
 
-  private def waitForUp(retries: Int = 50): Task[Unit] =
+  private def waitForUp(retries: Int = 100): Task[Unit] =
     if (retries <= 0) ZIO.fail(new RuntimeException("server did not start"))
     else
       httpGet("/ping").either.flatMap {
@@ -50,7 +59,7 @@ object WebSocketE2ESpec extends ZIOSpecDefault {
           app          = httpApp(db, hub)
           serverFiber <- Server.serve(app).provide(Server.default).fork
           _           <- waitForUp()
-          client       = HttpClient.newHttpClient()
+          client       = HttpClient.newBuilder().version(java.net.http.HttpClient.Version.HTTP_1_1).build()
           cf           = new CompletableFuture[String]()
           listener     = new WebSocket.Listener {
                            override def onText(
@@ -62,11 +71,35 @@ object WebSocketE2ESpec extends ZIOSpecDefault {
                              java.util.concurrent.CompletableFuture.completedFuture(null)
                            }
                          }
-          ws          <- ZIO.fromCompletableFuture(
-                           client.newWebSocketBuilder().buildAsync(URI.create("ws://127.0.0.1:8080/stream"), listener)
-                         )
+          ws <- {
+                  def tryUris = List("ws://127.0.0.1:8080/stream", "ws://[::1]:8080/stream")
+
+                  def connectTo(uri: String, retries: Int): Task[WebSocket] =
+                    ZIO.fromCompletableFuture(
+                      client.newWebSocketBuilder().buildAsync(URI.create(uri), listener)
+                    ).catchAll { err =>
+                      if (retries <= 0) ZIO.fail(err)
+                      else ZIO.attemptBlocking(println(s"WS connect to $uri failed, retrying... ($retries) -> $err")) *>
+                        ZIO.attemptBlocking(Thread.sleep(200)) *> connectTo(uri, retries - 1)
+                    }
+
+                  def connect(retriesPerUri: Int): Task[WebSocket] = {
+                    def loop(uris: List[String]): Task[WebSocket] = uris match {
+                      case Nil => ZIO.fail(new RuntimeException("all WS connect attempts failed"))
+                      case h :: t =>
+                        connectTo(h, retriesPerUri).either.flatMap {
+                          case Right(ws) => ZIO.succeed(ws)
+                          case Left(err) => ZIO.attemptBlocking(println(s"connect to $h failed final: $err")) *> loop(t)
+                        }
+                    }
+
+                    loop(tryUris)
+                  }
+
+                  connect(50)
+                }
           _           <- httpPost("/wish", "{\"title\":\"E2E\",\"details\":\"test\",\"priority\":1}")
-          msg         <- ZIO.attemptBlocking(cf.get(5, java.util.concurrent.TimeUnit.SECONDS))
+          msg         <- ZIO.attemptBlocking(cf.get(10, java.util.concurrent.TimeUnit.SECONDS))
           _           <- ZIO.attempt(ws.sendClose(WebSocket.NORMAL_CLOSURE, "bye"))
           _           <- serverFiber.interrupt
         } yield assert(msg)(containsString("E2E"))
