@@ -16,6 +16,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Install coursier launcher
+        run: |
+          curl -fLo cs https://git.io/coursier-cli
+          chmod +x cs
       - name: Cache sbt & coursier
         uses: actions/cache@v4
         with:
@@ -29,7 +33,7 @@ jobs:
             ${{ runner.os }}-sbt-
       - name: Run scalafmt check
         run: |
-          sbt scalafmtCheckAll
+          ./cs launch org.scala-sbt:sbt:1.8.2 -- scalafmtCheckAll
       - name: Run tests
         run: |
-          sbt test
+          ./cs launch org.scala-sbt:sbt:1.8.2 -- test
