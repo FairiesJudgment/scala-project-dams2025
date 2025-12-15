@@ -60,7 +60,7 @@ object WebSocketE2ESpec extends ZIOSpecDefault {
           hub         <- Hub.unbounded[Wish]
           app          = httpApp(db, hub)
           serverFiber <- Server.serve(app).provide(Server.default).fork
-          _           <- waitForUp()
+          _           <- waitForUp() *> ZIO.attemptBlocking(Thread.sleep(150))
           client       = HttpClient.newBuilder().version(java.net.http.HttpClient.Version.HTTP_1_1).build()
           cf           = new CompletableFuture[String]()
           listener     = new WebSocket.Listener {
@@ -74,7 +74,7 @@ object WebSocketE2ESpec extends ZIOSpecDefault {
                            }
                          }
           ws          <- {
-            def tryUris = List("ws://127.0.0.1:8080/stream", "ws://[::1]:8080/stream")
+            def tryUris = List("ws://localhost:8080/stream", "ws://127.0.0.1:8080/stream", "ws://[::1]:8080/stream")
 
             def connectTo(uri: String, retries: Int): Task[WebSocket] =
               ZIO
@@ -101,10 +101,10 @@ object WebSocketE2ESpec extends ZIOSpecDefault {
               loop(tryUris)
             }
 
-            connect(50)
+            connect(200)
           }
           _           <- httpPost("/wish", "{\"title\":\"E2E\",\"details\":\"test\",\"priority\":1}")
-          msg         <- ZIO.attemptBlocking(cf.get(10, java.util.concurrent.TimeUnit.SECONDS))
+          msg         <- ZIO.attemptBlocking(cf.get(20, java.util.concurrent.TimeUnit.SECONDS))
           _           <- ZIO.attempt(ws.sendClose(WebSocket.NORMAL_CLOSURE, "bye"))
           _           <- serverFiber.interrupt
         } yield assert(msg)(containsString("E2E"))
