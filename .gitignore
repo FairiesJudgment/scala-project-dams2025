@@ -12,7 +12,6 @@ out/
 .metals/
 .metals.sbt/
 .scalafix.conf
-.scalafmt.conf
 .idea/
 *.iml
 *.iws
