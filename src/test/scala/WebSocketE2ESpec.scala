@@ -20,13 +20,15 @@ object WebSocketE2ESpec extends ZIOSpecDefault {
       .build()
 
     def attemptSend(retries: Int): Task[(Int, String)] =
-      ZIO.attemptBlocking {
-        val resp = client.send(req, HttpResponse.BodyHandlers.ofString())
-        (resp.statusCode(), resp.body())
-      }.catchAll { _ =>
-        if (retries <= 0) ZIO.fail(new RuntimeException("httpPost failed after retries"))
-        else ZIO.attemptBlocking(Thread.sleep(200)) *> attemptSend(retries - 1)
-      }
+      ZIO
+        .attemptBlocking {
+          val resp = client.send(req, HttpResponse.BodyHandlers.ofString())
+          (resp.statusCode(), resp.body())
+        }
+        .catchAll { _ =>
+          if (retries <= 0) ZIO.fail(new RuntimeException("httpPost failed after retries"))
+          else ZIO.attemptBlocking(Thread.sleep(200)) *> attemptSend(retries - 1)
+        }
 
     attemptSend(200)
   }
@@ -71,33 +73,36 @@ object WebSocketE2ESpec extends ZIOSpecDefault {
                              java.util.concurrent.CompletableFuture.completedFuture(null)
                            }
                          }
-          ws <- {
-                  def tryUris = List("ws://127.0.0.1:8080/stream", "ws://[::1]:8080/stream")
+          ws          <- {
+            def tryUris = List("ws://127.0.0.1:8080/stream", "ws://[::1]:8080/stream")
 
-                  def connectTo(uri: String, retries: Int): Task[WebSocket] =
-                    ZIO.fromCompletableFuture(
-                      client.newWebSocketBuilder().buildAsync(URI.create(uri), listener)
-                    ).catchAll { err =>
-                      if (retries <= 0) ZIO.fail(err)
-                      else ZIO.attemptBlocking(println(s"WS connect to $uri failed, retrying... ($retries) -> $err")) *>
-                        ZIO.attemptBlocking(Thread.sleep(200)) *> connectTo(uri, retries - 1)
-                    }
-
-                  def connect(retriesPerUri: Int): Task[WebSocket] = {
-                    def loop(uris: List[String]): Task[WebSocket] = uris match {
-                      case Nil => ZIO.fail(new RuntimeException("all WS connect attempts failed"))
-                      case h :: t =>
-                        connectTo(h, retriesPerUri).either.flatMap {
-                          case Right(ws) => ZIO.succeed(ws)
-                          case Left(err) => ZIO.attemptBlocking(println(s"connect to $h failed final: $err")) *> loop(t)
-                        }
-                    }
-
-                    loop(tryUris)
-                  }
-
-                  connect(50)
+            def connectTo(uri: String, retries: Int): Task[WebSocket] =
+              ZIO
+                .fromCompletableFuture(
+                  client.newWebSocketBuilder().buildAsync(URI.create(uri), listener)
+                )
+                .catchAll { err =>
+                  if (retries <= 0) ZIO.fail(err)
+                  else
+                    ZIO.attemptBlocking(println(s"WS connect to $uri failed, retrying... ($retries) -> $err")) *>
+                      ZIO.attemptBlocking(Thread.sleep(200)) *> connectTo(uri, retries - 1)
                 }
+
+            def connect(retriesPerUri: Int): Task[WebSocket] = {
+              def loop(uris: List[String]): Task[WebSocket] = uris match {
+                case Nil    => ZIO.fail(new RuntimeException("all WS connect attempts failed"))
+                case h :: t =>
+                  connectTo(h, retriesPerUri).either.flatMap {
+                    case Right(ws) => ZIO.succeed(ws)
+                    case Left(err) => ZIO.attemptBlocking(println(s"connect to $h failed final: $err")) *> loop(t)
+                  }
+              }
+
+              loop(tryUris)
+            }
+
+            connect(50)
+          }
           _           <- httpPost("/wish", "{\"title\":\"E2E\",\"details\":\"test\",\"priority\":1}")
           msg         <- ZIO.attemptBlocking(cf.get(10, java.util.concurrent.TimeUnit.SECONDS))
           _           <- ZIO.attempt(ws.sendClose(WebSocket.NORMAL_CLOSURE, "bye"))
