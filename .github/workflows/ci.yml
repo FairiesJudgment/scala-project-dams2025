@@ -20,6 +20,7 @@ jobs:
         run: |
           curl -fLo cs https://git.io/coursier-cli
           chmod +x cs
+          ./cs install sbt
       - name: Cache sbt & coursier
         uses: actions/cache@v4
         with:
@@ -33,7 +34,7 @@ jobs:
             ${{ runner.os }}-sbt-
       - name: Run scalafmt check
         run: |
-          ./cs launch org.scala-sbt:sbt:1.8.2 -- scalafmtCheckAll
+          ~/.local/share/coursier/bin/sbt scalafmtCheckAll
       - name: Run tests
         run: |
-          ./cs launch org.scala-sbt:sbt:1.8.2 -- test
+          ~/.local/share/coursier/bin/sbt test
