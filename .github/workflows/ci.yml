@@ -16,14 +16,20 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Cache sbt
+      - name: Cache sbt & coursier
         uses: actions/cache@v4
         with:
           path: |
             ~/.ivy2/cache
             ~/.sbt
             ~/.coursier
-          key: ${{ runner.os }}-sbt-${{ hashFiles('**/build.sbt') }}
+            ~/.cache/coursier
+          key: ${{ runner.os }}-sbt-${{ hashFiles('**/build.sbt', '**/*.sbt', 'project/*', 'project/**/*') }}-${{ hashFiles('project/plugins.sbt', 'project/build.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-sbt-
+      - name: Run scalafmt check
+        run: |
+          sbt scalafmtCheckAll
       - name: Run tests
         run: |
           sbt test
