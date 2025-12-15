@@ -12,94 +12,91 @@
   - Affiche en temps réel les nouveaux souhaits reçus du serveur.
   - Contient une zone de test CRUD pour lister, lire, modifier ou supprimer des souhaits.
 
-## Lancer le serveur Scala
+# Projet "Wish-list collaborative"
 
-1. Ouvrir un terminal dans le dossier racine du projet (contenant `build.sbt`).
-2. Lancer la commande suivante :
+Ce dépôt contient une petite application serveur écrite en Scala + ZIO qui gère une liste de souhaits en mémoire et diffuse les nouveaux éléments via WebSocket.
+
+Principales fonctionnalités
+- API REST basique (CRUD) : `GET /wishes`, `GET /wish/:index`, `POST /wish`, `PUT /wish/:index`, `DELETE /wish/:index`.
+- Endpoint pour tirer un souhait au hasard : `GET /random` (retourne 404 si la liste est vide).
+- WebSocket de diffusion des nouveaux wishes : `GET /stream` (messages JSON).
+- Client d'exemple : `Stream_site.html` (interface minimale pour tester le stream et le POST).
+
+Prerequis
+- Java 17
+- sbt (local) — CI installe sbt via `coursier` so runners don't need sbt preinstalled.
+
+Lancer le serveur
+1. Depuis la racine du projet (même dossier que `build.sbt`) :
 
 ```bash
 sbt run
 ```
 
-Le serveur démarre et écoute par défaut sur `http://localhost:8080` (fourni par `Server.default`).
-
-### Configuration du port
-
-- Vous pouvez override le port HTTP en passant une propriété JVM lorsque vous lancez sbt, par exemple :
+2. Par défaut le serveur écoute sur `http://127.0.0.1:8080`.
+   Pour changer le port :
 
 ```bash
 sbt -Dhttp.port=8081 run
 ```
 
-Le serveur lit le port par défaut via la configuration de `Server.default`.
+Notes : le serveur lit une propriété système `http.port` si fournie; nous utilisons `Server.default` pour la configuration.
 
-Note on dependencies:
-- This project uses `zio-http` `3.0.0-RC6` (a release candidate). Consider pinning to a stable release when available.
-
-## Tester l'API (exemples)
+Tester rapidement l'API (exemples)
 
 - Lister tous les wishes :
 
 ```bash
-curl http://localhost:8080/wishes
+curl http://127.0.0.1:8080/wishes
 ```
 
-- Créer un wish :
+- Créer un wish (retourne `201` + body créé) :
 
 ```bash
-curl -X POST http://localhost:8080/wish -H 'Content-Type: application/json' -d '{"title":"Offrir une plante","details":"Plante verte pour le salon","priority":2}'
+curl -X POST http://127.0.0.1:8080/wish \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Offrir une plante","details":"Plante verte","priority":2}'
 ```
 
 - Récupérer un wish par index :
 
 ```bash
-curl http://localhost:8080/wish/0
+curl http://127.0.0.1:8080/wish/0
 ```
 
 - Tirer un wish aléatoire :
 
 ```bash
-curl http://localhost:8080/random
+curl http://127.0.0.1:8080/random
 ```
 
-## Lancer le client (page HTML)
+Client HTML
+1. Ouvrez `Stream_site.html` dans votre navigateur (double-click ou `File -> Open`).
+2. Assurez-vous que le serveur tourne sur `http://127.0.0.1:8080`.
+3. Le client se connecte à `ws://127.0.0.1:8080/stream` pour recevoir les nouveaux wishes et propose un formulaire pour en poster.
 
-1. Ouvrir `Stream_site.html` avec votre navigateur (double-clic ou `File -> Open`).
-2. Vérifier que le serveur Scala est lancé sur `http://localhost:8080`.
-3. Ajouter un souhait via le formulaire ; les nouveaux souhaits s'affichent en temps réel via WebSocket.
-
-## Tests
-
-- Ce projet contient des tests unitaires et un test d'intégration minimal utilisant `zio-test` :
-  - `src/test/scala/WishSpec.scala` — tests unitaires (JSON, Ref, Hub publish).
-  - `src/test/scala/IntegrationSpec.scala` — test d'intégration qui démarre le serveur et vérifie `/ping` et `/wishes`.
-
-Run:
+Tests
+- Lancer tous les tests :
 
 ```bash
 sbt test
 ```
 
-Integration tests:
+- Lancer seulement l'intégration / E2E :
 
 ```bash
-sbt "testOnly *IntegrationSpec"  # start server and run integration checks
-sbt "testOnly *WebSocketE2ESpec"  # run the e2e WebSocket test
-
-## CI caching & running integration tests
-
-- CI caches sbt and coursier artifacts to speed up runs. If you change `project/plugins.sbt`, `project/build.properties` or any `*.sbt` file, the cache key will change and dependencies will be re-resolved.
-- To run integration tests locally (the CI runs `sbt test` by default):
-
-```bash
-sbt "testOnly *IntegrationSpec"    # starts the server and runs integration checks
-sbt "testOnly *WebSocketE2ESpec"  # run the e2e WebSocket test
+sbt "testOnly *IntegrationSpec"
+sbt "testOnly *WebSocketE2ESpec"
 ```
 
-If you want CI to run integration tests as a separate job, open a PR and I can add an `integration` job to the workflow that runs only on scheduled or manual dispatch.
-```
+Formatting & CI
+- `scalafmt` est appliqué en CI (`sbt scalafmtCheckAll`). Si CI échoue sur le style, lancez `sbt scalafmtAll` localement et poussez le résultat.
+- CI installe sbt via `coursier` and runs `sbt test`. Les runs utilisent caching (coursier/ivy) pour accélérer.
 
-## Remarques et améliorations à venir
+Notes techniques & limites
+- Stockage en mémoire (`Ref[Vector[Wish]]`) — pas de persistance.
+- WebSocket broadcast implemented with `Hub[Wish]`.
+- Tests peuvent être sensibles au timing (le WebSocket E2E a été durci pour la CI).
 
-- Le stockage est uniquement en mémoire (`Ref[Vector[Wish]]`).
-- Le serveur retourne `404` pour `/random` si la liste est vide.
+Besoin d'aide pour tester manuellement ?
+- Dis-moi ton OS et navigateur et je te fournis une check-list pas-à-pas (ou des commandes PowerShell/Bash pour automatiser une session de test).
